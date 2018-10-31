@@ -63,10 +63,16 @@ function checkNpmPublish(packagePath) {
 function scanMaterials() {
   Promise.all([
     scanPackageJson('../react-materials/*/*/package.json'),
+    scanPackageJson('../rax-materials/*/*/package.json'),
     scanPackageJson('../vue-materials/*/*/package.json'),
+    scanPackageJson('../angular-materials/*/*/package.json'),
   ])
-    .then(([reactMaterials, vueMaterials = []]) => {
-      const allMaterials = [...reactMaterials, ...vueMaterials];
+    .then(([reactMaterials = [], vueMaterials = [], angularMaterials = []]) => {
+      const allMaterials = [
+        ...reactMaterials,
+        ...vueMaterials,
+        ...angularMaterials,
+      ];
       return Promise.all(allMaterials.map(checkNpmPublish));
     })
     .then((publishCheck) => {

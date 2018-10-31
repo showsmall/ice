@@ -1,4 +1,4 @@
-const { resolve } = require('path');
+const { resolve, join } = require('path');
 const { readFileSync } = require('fs');
 const axios = require('axios');
 
@@ -60,20 +60,44 @@ function checkAndQueryNpmTime(
     .catch((err) => {
       if (err.response && err.response.status === 404) {
         // 这种情况是该 npm 包名一次都没有发布过
-        return [1, {
-          error: err,
-          npm: npm,
-          version: version,
-          message: '[ERR checkAndQueryNpmTime] 未发布的 npm 包',
-        }]
-      } else {
-        return [1, {
-          error: err,
-          npm: npm,
-          version: version,
-          message: `[ERR checkAndQueryNpmTime] ${err.message}`,
-        }]
+        return [
+          1,
+          {
+            error: err,
+            npm,
+            version,
+            message: '[ERR checkAndQueryNpmTime] 未发布的 npm 包',
+          },
+        ];
       }
+
+      return [
+        1,
+        {
+          error: err,
+          npm,
+          version,
+          message: `[ERR checkAndQueryNpmTime] ${err.message}`,
+        },
+      ];
     });
 }
 exports.checkAndQueryNpmTime = checkAndQueryNpmTime;
+
+/**
+ * 区分 组件 or 区块
+ * component or block
+ */
+exports.getType = function getType(workDir) {
+  const pkg = require(join(workDir, 'package.json'));
+  let type = 'block';
+  if (
+    Array.isArray(pkg.keywords) &&
+    pkg.keywords.some((kw) => {
+      return /component/.test(kw);
+    })
+  ) {
+    type = 'component';
+  }
+  return type;
+};

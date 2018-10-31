@@ -1,6 +1,7 @@
 const fs = require('fs');
-const getPaths = require('./paths');
-const paths = getPaths(process.cwd());
+
+const paths = require('./paths');
+
 const pkg = {};
 
 try {
@@ -9,8 +10,8 @@ try {
     JSON.parse(fs.readFileSync(paths.appPackageJson, 'utf-8'))
   );
 } catch (err) {
-  console.log(err);
   console.log('获取项目 package.json 失败, 检查是否有语法错误. ');
+  throw err;
 }
 
 module.exports = pkg;

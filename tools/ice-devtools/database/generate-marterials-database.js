@@ -5,6 +5,7 @@ const mkdirp = require('mkdirp');
 const moment = require('moment');
 const uppercamelcase = require('uppercamelcase');
 const rp = require('request-promise');
+const pathExists = require('path-exists');
 const depAnalyze = require('../shared/dep-analyze');
 const { checkAndQueryNpmTime } = require('../shared/utils');
 
@@ -32,32 +33,15 @@ function generateBlocks(files, SPACE, type, done) {
   const result = [];
   files.forEach((pkgPath) => {
     const pkg = JSON.parse(fs.readFileSync(path.join(SPACE, pkgPath)));
-    const componentDeps = depAnalyze(
-      path.resolve(SPACE, pkgPath, '../src/index.js')
-    );
-
-    const useComponents = componentDeps.map((mod) => {
-      let basePackage = '';
-      let className = '';
-      if (mod.startsWith('@icedesign/base')) {
-        basePackage = '@icedesign/base';
-        const subCom = /@icedesign\/base\/lib\/(.*)/.exec(mod)[1];
-        className = uppercamelcase(subCom);
-      } else {
-        basePackage = mod;
-        const subCom = /@icedesign\/(.*)/.exec(mod)[1];
-        className = uppercamelcase(subCom);
-      }
-
-      return {
-        basePackage,
-        className,
-      };
-    });
+    const indexPoint = path.resolve(SPACE, pkgPath, '../src/index.js');
 
     // blockConfig or layoutConfig
     const configKey = `${type}Config`;
     const pkgConfig = pkg[configKey] || {};
+
+    const registry =
+      (pkg.publishConfig && pkg.publishConfig.registry) ||
+      'http://registry.npmjs.com';
 
     const payload = {
       // (必)英文名
@@ -68,6 +52,8 @@ function generateBlocks(files, SPACE, type, done) {
         type: 'npm',
         npm: pkg.name,
         version: pkg.version,
+        registry,
+
         // layout or block need src/
         sourceCodeDirectory: 'src/',
       },
@@ -79,10 +65,33 @@ function generateBlocks(files, SPACE, type, done) {
 
       categories: pkgConfig.categories || [],
       // publishTime: pkg.publishTime || new Date().toISOString(),
-      features: {
-        useComponents,
-      },
     };
+
+    if (pathExists.sync(indexPoint)) {
+      const componentDeps = depAnalyze(indexPoint);
+      const useComponents = componentDeps.map((mod) => {
+        let basePackage = '';
+        let className = '';
+        if (mod.startsWith('@icedesign/base')) {
+          basePackage = '@icedesign/base';
+          const subCom = /@icedesign\/base\/lib\/(.*)/.exec(mod)[1];
+          className = uppercamelcase(subCom);
+        } else {
+          basePackage = mod;
+          const subCom = /@icedesign\/(.*)/.exec(mod)[1];
+          className = uppercamelcase(subCom);
+        }
+
+        return {
+          basePackage,
+          className,
+        };
+      });
+
+      payload.features = {
+        useComponents,
+      };
+    }
 
     generatePartciple(payload, {
       title: pkgConfig.title,
@@ -133,21 +142,21 @@ function generateBlocks(files, SPACE, type, done) {
     result.map((item) => {
       if (item.source.type !== 'npm') {
         return Promise.resolve();
-      } else {
-        return checkAndQueryNpmTime(item.source.npm, item.source.version).then(
-          ([code, npmResult]) => {
-            if (code == 0) {
-              item.publishTime = npmResult.created;
-              item.updateTime = npmResult.modified;
-              return Promise.resolve();
-            } else {
-              item.publishTime = null;
-              item.updateTime = null;
-              return Promise.resolve(npmResult);
-            }
-          }
-        );
       }
+      return checkAndQueryNpmTime(
+        item.source.npm,
+        item.source.version,
+        item.source.registry
+      ).then(([code, npmResult]) => {
+        if (code === 0) {
+          item.publishTime = npmResult.created;
+          item.updateTime = npmResult.modified;
+          return Promise.resolve();
+        }
+        item.publishTime = null;
+        item.updateTime = null;
+        return Promise.resolve(npmResult);
+      });
     })
   ).then((allCheckStatus) => {
     const failedStatus = allCheckStatus.filter((n) => typeof n !== 'undefined');
@@ -166,14 +175,16 @@ function generateScaffolds(files, SPACE, done) {
   const tasks = [];
   const result = files.map((pkgPath) => {
     const pkg = JSON.parse(fs.readFileSync(path.join(SPACE, pkgPath)));
-    const dependencies = pkg.dependencies || {};
-    const devDependencies = pkg.devDependencies || {};
 
     const generatorJsonPath = path.resolve(pkgPath, '../generator.json');
     const generatorJson = {};
     if (fs.existsSync(generatorJsonPath)) {
       Object.assign(generatorJson, require(generatorJsonPath));
     }
+
+    const registry =
+      (pkg.publishConfig && pkg.publishConfig.registry) ||
+      'http://registry.npmjs.com';
 
     const payload = {
       // (必)英文名
@@ -184,6 +195,7 @@ function generateScaffolds(files, SPACE, done) {
         type: 'npm',
         npm: pkg.name,
         version: pkg.version,
+        registry,
       },
       // (必) 用于说明组件依赖关系
       dependencies: pkg.dependencies || {},
@@ -197,17 +209,18 @@ function generateScaffolds(files, SPACE, done) {
     };
 
     tasks.push(
-      checkAndQueryNpmTime(pkg.name, pkg.version).then(([code, npmResult]) => {
-        if (code == 0) {
-          payload.publishTime = npmResult.created;
-          payload.updateTime = npmResult.modified;
-          return Promise.resolve();
-        } else {
+      checkAndQueryNpmTime(pkg.name, pkg.version, registry).then(
+        ([code, npmResult]) => {
+          if (code === 0) {
+            payload.publishTime = npmResult.created;
+            payload.updateTime = npmResult.modified;
+            return Promise.resolve();
+          }
           payload.publishTime = null;
           payload.updateTime = null;
           return Promise.resolve(npmResult);
         }
-      })
+      )
     );
 
     generatePartciple(payload, {
@@ -325,7 +338,7 @@ function gatherScaffolds(pattern, SPACE) {
  * @param {Object} appender 需要补充的字段, key 是返回的字段, 对应的 value 是 registry 返回的字段
  */
 function appendFieldFromNpm(item) {
-  const registry = 'http://registry.npm.taobao.org/';
+  const registry = 'http://registry.npmjs.com/';
   const { npm, version } = item;
   return rp({ uri: `${registry}${npm}`, json: true }).then((body) => {
     const latestVersionBody = body.versions[version];
@@ -343,45 +356,39 @@ function appendFieldFromNpm(item) {
 }
 
 // entry and run
-module.exports = function main(materialName, materialPath, options) {
+module.exports = function generateMaterialsDatabases(
+  materialName,
+  materialPath,
+  options
+) {
   const distDir = path.resolve(process.cwd(), 'build');
   mkdirp.sync(distDir);
 
-  return (
-    Promise.resolve(materialPath)
-      .then((space) => {
-        return Promise.all([
-          gatherBlocksOrLayouts('blocks/*/package.json', space, 'block'),
-          gatherBlocksOrLayouts('layouts/*/package.json', space, 'layout'),
-          gatherScaffolds('scaffolds/*/package.json', space),
-        ]);
-      })
-      // .then(([blocks, layouts, scaffolds]) => {
-      //   // 补充字段
-      //   return Promise.all([
-      //     Promise.all(blocks.map(appendFieldFromNpm)),
-      //     Promise.all(layouts.map(appendFieldFromNpm)),
-      //     Promise.all(scaffolds.map(appendFieldFromNpm)),
-      //   ]);
-      // })
-      .then(([blocks, layouts, scaffolds]) => {
-        const data = {
-          name: materialName, // 物料池名
-          type: options.type, // vue or react,...
-          blocks,
-          layouts,
-          scaffolds,
-        };
+  return Promise.resolve(materialPath)
+    .then((space) => {
+      return Promise.all([
+        gatherBlocksOrLayouts('blocks/*/package.json', space, 'block'),
+        gatherBlocksOrLayouts('layouts/*/package.json', space, 'layout'),
+        gatherScaffolds('scaffolds/*/package.json', space),
+      ]);
+    })
+    .then(([blocks, layouts, scaffolds]) => {
+      const data = {
+        name: materialName, // 物料池名
+        ...options,
+        blocks,
+        layouts,
+        scaffolds,
+      };
 
-        const file = path.join(distDir, materialName + '.json');
-        fs.writeFileSync(file, JSON.stringify(data, null, 2) + '\n');
+      const file = path.join(distDir, materialName + '.json');
+      fs.writeFileSync(file, JSON.stringify(data, null, 2) + '\n');
 
-        console.log(
-          `${materialName} 物料数据生成完毕. Marterials DB Generated.\n${file}`
-        );
-      })
-      .catch((err) => {
-        console.log('uncaught error:\n', err.stack);
-      })
-  );
+      console.log(
+        `${materialName} 物料数据生成完毕. Marterials DB Generated.\n${file}`
+      );
+    })
+    .catch((err) => {
+      console.log('uncaught error:\n', err.stack);
+    });
 };

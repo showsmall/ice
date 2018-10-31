@@ -5,9 +5,13 @@ const BABEL_LOADER = require.resolve('babel-loader');
 const STYLE_LOADER = require.resolve('style-loader');
 const CSS_LOADER = require.resolve('css-loader');
 const SASS_LOADER = require.resolve('sass-loader');
+const LESS_LOADER = require.resolve('less-loader');
 const VUE_STYLE_LOADER = require.resolve('vue-style-loader');
 const VUE_LOADER = require.resolve('vue-loader');
 const WebpackPluginImport = require('webpack-plugin-import');
+
+const URL_LOADER = require.resolve('url-loader');
+const URL_LOADER_LIMIT = 8192;
 
 const getBabelConfig = require('./getBabelConfig');
 
@@ -42,6 +46,10 @@ const baseConfig = {
         use: [STYLE_LOADER, CSS_LOADER, SASS_LOADER],
       },
       {
+        test: /\.less$/,
+        use: [STYLE_LOADER, CSS_LOADER, LESS_LOADER],
+      },
+      {
         test: /\.vue$/,
         loader: VUE_LOADER,
         options: {
@@ -51,6 +59,23 @@ const baseConfig = {
             sass: `${VUE_STYLE_LOADER}!${CSS_LOADER}!${SASS_LOADER}?indentedSyntax`, // <style lang="sass">
             css: `${VUE_STYLE_LOADER}!${CSS_LOADER}`,
           },
+        },
+      },
+      {
+        test: /\.svg$/,
+        loader: URL_LOADER,
+        options: {
+          limit: URL_LOADER_LIMIT,
+          minetype: 'image/svg+xml',
+          name: 'images/[hash].[ext]',
+        },
+      },
+      {
+        test: /\.(png|jpg|jpeg|gif)$/i,
+        loader: URL_LOADER,
+        options: {
+          limit: URL_LOADER_LIMIT,
+          name: 'images/[hash].[ext]',
         },
       },
     ],

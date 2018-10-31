@@ -3,23 +3,65 @@
 'use strict';
 
 const program = require('commander');
+
 const validationSassAvailable = require('../lib/utils/validationSassAvailable');
+const optionsAttachToEnv = require('../lib/utils/optionsAttachToEnv');
 
 program
-  .option('-p, --port <port>', 'server port')
-  .option('-h, --host <host>', 'server host')
-  .option('--https', 'server https')
-  .option('-s, --skip-install', 'skip install dependencies')
+  .option('-p, --port <port>', '服务端口号')
+  .option('-h, --host <host>', '服务主机名')
+  .option('--https', '开启 https ')
+  .option('--analyzer', '开启构建分析')
+  .option('--analyzer-port', '设置分析端口号')
+  .option('--disabled-reload', '关闭 hot reload')
+  .option('--project-type <type>', '项目类型, node|web', /^(node|web)$/i, 'web')
+  .option(
+    '--inject-babel <type>',
+    '注入 babel 运行环境, Enum: polyfill|runtime',
+    /^(polyfill|runtime)$/,
+    'polyfill'
+  )
   .parse(process.argv);
 
-const { choosePort } = require('react-dev-utils/WebpackDevServerUtils');
+const detect = require('detect-port');
+const inquirer = require('inquirer');
 
-const DEFAULT_PORT = program.port || process.env.PORT || 3333;
+const isInteractive = process.stdout.isTTY;
+
+optionsAttachToEnv(program);
+
+const DEFAULT_PORT = program.port || process.env.PORT || 4444;
 const HOST = program.host || process.env.HOST || '0.0.0.0';
+const defaultPort = parseInt(DEFAULT_PORT, 10);
 
 validationSassAvailable()
   .then(() => {
-    return choosePort(HOST, parseInt(DEFAULT_PORT, 10));
+    return detect(defaultPort);
+  })
+  .then((newPort) => {
+    return new Promise((resolve) => {
+      if (newPort === defaultPort) {
+        return resolve(newPort);
+      }
+
+      if (isInteractive) {
+        const question = {
+          type: 'confirm',
+          name: 'shouldChangePort',
+          message: `${defaultPort} 端口已被占用，是否使用 ${newPort} 端口启动？`,
+          default: true,
+        };
+        inquirer.prompt(question).then((answer) => {
+          if (answer.shouldChangePort) {
+            resolve(newPort);
+          } else {
+            resolve(null);
+          }
+        });
+      } else {
+        resolve(null);
+      }
+    });
   })
   .then((port) => {
     const dev = require('../lib/dev');

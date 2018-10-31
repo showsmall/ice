@@ -1,5 +1,3 @@
-'use strict';
-
 const request = require('request');
 const debug = require('debug')('ice:generator:npm');
 const semver = require('semver');
@@ -19,7 +17,7 @@ module.exports = {
     return new Promise(function(resolve, reject) {
       request(
         {
-          url: `http://registry.npmjs.org/${npm}`,
+          url: `http://registry.npmjs.com/${npm}`,
           json: true,
         },
         function(err, res, body) {
